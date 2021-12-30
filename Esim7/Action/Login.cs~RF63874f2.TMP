@@ -1,0 +1,295 @@
+﻿using Dapper;
+using Esim7.Models;
+using Esim7.parameter.User;
+using Esim7.UNity;
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Security.Cryptography;
+using System.Web;
+
+namespace Esim7.Action
+{
+    public class Login
+    {
+        /// <summary>
+        /// 用户登录
+        /// </summary>
+        /// <param name="username"></param>
+        /// <param name="password"></param>
+        /// <returns></returns>
+        public static User Judge(String loginname, string password)
+        {      
+            List<User> li = new List<User>();
+            List<User> li1 = new List<User>();
+            User user = new User();
+            string s = Unit.MD5_64(password);
+            string Num = Unit.GetTimeStamp(DateTime.Now);
+            using (IDbConnection conn = DapperService.MySqlConnection())
+            {
+                string sql2 = "select * from cf_user where LoginName=@LoginName and Loginpassword=@Loginpassword and status=1";
+                string sql3 = "select LoginName from cf_user where LoginName=@LoginName and Loginpassword=@Loginpassword and status=-1 ";
+               
+                li = conn.Query<User>(sql2, new { LoginName = loginname, Loginpassword = s }).AsList();
+                li1 = conn.Query<User>(sql3, new { LoginName = loginname, Loginpassword = s }).AsList();
+                foreach (User item in conn.Query<User>(sql2, new { LoginName = loginname, Loginpassword = s }).AsList())
+                {
+                    if (li.Count == 1)
+                    {
+                        string companysql = "select * from company where CompanyID='"+item.Company_ID+"'";
+                        user.CompanyAdress = conn.Query<User>(companysql).Select(t => t.CompanyAdress).FirstOrDefault();
+                        user.CompanyName = conn.Query<User>(companysql).Select(t => t.CompanyName).FirstOrDefault();
+                        user.CompanyPhone = conn.Query<User>(companysql).Select(t => t.CompanyPhone).FirstOrDefault();
+                        user.userid = item.userid;
+                        user.Company_ID = item.Company_ID;
+                        user.loginname = loginname;
+                        user.MSg = "success";
+                        user.flg = "1";
+                        user.status = 1;                       
+                        user.fileName = item.fileName;
+
+                        if (item.Company_ID == "1556265186243")
+                        {
+                            user.permission = "1";
+                        }
+                        else
+                        {
+                            user.permission = "2";
+                        }
+                        li.Clear();
+                    }                    
+                }               
+                if (li1.Count == 1)
+                {
+                    user.MSg = "该用户已禁用!";
+                    user.flg = "0";
+                    user.status = -1;
+                    user.permission = "-1";
+                }
+                return user;
+            }
+        }
+        /// <summary>
+        /// 添加用户
+        /// </summary>
+        /// <param name="username"></param>
+        /// <param name="password"></param>
+        /// <returns></returns>
+        public static User Inner(string username, string password)
+        {
+            string s = Unit.MD5_64(password);
+
+            string Num = Unit.GetTimeStamp(DateTime.Now);
+
+            using (IDbConnection conn = DapperService.MySqlConnection())
+            {
+                string sql2 = "select * from cf_user where LoginName=@LoginName";
+                User user = new User();
+                List<User> li = new List<User>();
+                li.Add(conn.Query<User>(sql2, new { LoginName = username }).SingleOrDefault());
+                foreach (User item in li)
+                {
+                    if (item != null)
+                    {
+                        user.loginname = "用户名已经存在！";
+                        user.MSg = "已存在";
+                        user.flg = "0";
+                        li.Clear();
+                        return user;
+                    }
+                }
+                {
+                    string sql = "INSERT INTO cf_user(UserID, LoginName, Loginpassword,status ) values(@UserID,@LoginName, @Loginpassword,@status)";
+                    var result = conn.Execute(sql,
+                                     new
+                                     {
+                                         UserID = Num,
+                                         LoginName = username,
+                                         Loginpassword = s,
+                                         status = 1
+                                     });
+                    user.loginname = username;
+                    user.userid = Num;
+                    user.loginpwd = password;
+                    user.status = 1;
+                    user.MSg = "恭喜注册成功！";
+                    user.flg = "1";
+                    li.Clear();
+                    return user;
+                }
+                //string sql = "select min(IMEI+0) as IMEI ,SUBSTRING(SN ,4) as SN from am900 where  oldimsi=''and EID='' and status=" + this.txt_status.Text.Trim();
+                //    conn.Query<User>(sql).AsList()
+                //    ;
+                // }
+            }
+        }
+
+        ///<summary>
+        ///新用户注册
+        /// </summary>
+        public Information UserRegister(UserRegisterPara para)
+        {
+            Information info = new Information();
+            try
+            {
+                string password = Unit.MD5_64(para.Password);
+                string Company_ID= Unit.GetTimeStamp(DateTime.Now);
+                string User_Menu = "1,2,3,4,6,7,8,9,10,11,18,19,20,21,22,23,24,30,31,32";//给注册用户一个默认的菜单
+                string loginnamesql = "select LoginName as loginname from cf_user where LoginName='" + para.Username+"'";
+                string filename = "default.png";
+                string Userid = Unit.GetTimeStamp(DateTime.Now);
+                string adduser= "insert info cf_user(UserID,LoginName,Loginpassword,status,Company_ID,User_Menu,User_Pid,IsCostomer,fileName,Email,UserType) " +
+                    "values('"+Userid+"','"+para.Username+"','"+password+"',"+1+",'"+Company_ID+"','"+User_Menu+"',"+27+","+false+",'"+filename+"','"+para.Email+"','"+2+"')";
+                string addcompany = "insert info company(CompanyID,CompanyName,Companyremarks,CompanyOpeningDate,status,CompanyPhone,CompanyAdress)" +
+                    " values()";
+                using (IDbConnection conn = DapperService.MySqlConnection())
+                {
+                    var username = conn.Query<User>(loginnamesql).Select(t => t.loginname).FirstOrDefault();
+                    if (username != null)
+                    {
+                        info.flg = "-1";
+                        info.Msg = "用户名已存在";
+                    }
+                    else
+                    {
+                        conn.Execute(adduser);
+                        conn.Execute(addcompany);
+                        info.flg = "1";
+                        info.Msg = "添加成功!";
+                    }
+                    
+                }
+            }
+            catch (Exception ex)
+            {
+
+            }
+            return info;
+        }
+
+        /// <summary>
+        /// 更新数据
+        /// </summary>
+        /// <param name="u"></param>
+        /// <returns></returns>
+        public static User update(User u)
+        {
+            string password = u.loginpwd;
+            string username = u.loginname;
+            string s = Unit.MD5_64(password);
+            string Num = Unit.GetTimeStamp(DateTime.Now);
+            using (IDbConnection
+            conn = DapperService.MySqlConnection())
+            {
+                string sql2 = "select * from cf_user where LoginName=@LoginName  and status=1";
+                User user = new User();
+                List<User> li = new List<User>();
+                //foreach (User item in li)
+                //{
+                li = conn.Query<User>(sql2, new { LoginName = username, Loginpassword = s }).AsList();
+                //foreach (User item in li)
+                {
+                    if (li.Count == 1)
+                    {
+                        string UserID = "";
+                        foreach (User item in li)
+                        {
+                            UserID = item.userid;
+                        }
+                        user.loginname = u.loginname;
+                        string sql = "update cf_user set loginpassword=@password where userid= " + UserID;
+                        var result = conn.Execute(sql, new { password = s });
+                        user.MSg = "success";
+                        user.status = 1;
+                        user.flg = result.ToString();
+                        li.Clear();
+                    }
+                    else
+                    {
+                        user.MSg = "该用户未注册或密码错误请重试！";
+                        user.status = 1;
+                    }
+                }
+                return user;
+            }
+        }
+
+        /// <summary>
+        /// 查询 User 没有注销的用户
+        /// </summary>
+        /// <returns></returns>
+        public static List<User> Getusers()
+        {
+            using (IDbConnection conn = DapperService.MySqlConnection())
+            {
+                string sql2 = "select UserID,LoginName from cf_user where status=1";
+                User user = new User();
+                List<User> li = new List<User>();
+                //foreach (User item in li)
+                //{
+                li = conn.Query<User>(sql2).AsList();
+                return li;
+            }
+        }
+
+        ///<summary>
+        ///修改个人信息
+        /// </summary>
+        public Information UpdateInfo(UserUpdateInfo para)
+        {
+            Information info = new Information();
+            #region  本地使用
+            try
+            {
+                string filenamesql = "select fileName from cf_user where Company_ID='" + para.Company_ID + "'";
+                string sqlupdateinfo = "update company set CompanyPhone='" + para.CompanyPhone + "',CompanyAdress='" + para.CompanyAdress + "',CompanyName='" + para.CompanyName + "' where CompanyID='" + para.Company_ID + "'";
+                string sqlupdateuser = "update cf_user set LoginName='" + para.loginname + "',fileName='" + para.fileName + "' where Company_ID='" + para.Company_ID + "'";
+                using (IDbConnection conn = DapperService.MySqlConnection())
+                {
+                    conn.Execute(sqlupdateinfo);
+                    conn.Execute(sqlupdateuser);
+                    info.flg = "1";
+                    info.Msg = "修改成功!";
+                }
+            }
+            catch (Exception ex)
+            {
+                info.flg = "-1";
+                info.Msg = "修改失败:" + ex;
+            }
+            #endregion
+            #region  发布使用
+            //try
+            //{
+            //    string fileName = string.Empty;
+            //    string dir = @"C:\IIS\UploadUserLogoFiles\";
+            //    string filenamesql = "select fileName from cf_user where Company_ID='" + para.Company_ID + "'";
+            //    string sqlupdateinfo = "update company set CompanyPhone='" + para.CompanyPhone + "',CompanyAdress='" + para.CompanyAdress + "',CompanyName='" + para.CompanyName + "' where CompanyID='" + para.Company_ID + "'";
+            //    string sqlupdateuser = "update cf_user set LoginName='" + para.loginname + "',fileName='" + para.fileName + "' where Company_ID='" + para.Company_ID + "'";
+            //    using (IDbConnection conn = DapperService.MySqlConnection())
+            //    {
+            //        conn.Execute(sqlupdateinfo);
+            //        conn.Execute(sqlupdateuser);
+            //        fileName = conn.Query<User>(filenamesql).Select(t => t.fileName).FirstOrDefault();
+            //        if (fileName != "default.png")
+            //        {
+            //            File.Delete(dir + fileName);//删除之前的logo文件 保留默认文件
+            //        }                    
+            //        info.flg = "1";
+            //        info.Msg = "修改成功!";
+            //    }
+            //}
+            //catch (Exception ex)
+            //{
+            //    info.flg = "-1";
+            //    info.Msg = "修改失败:" + ex;
+            //}
+            #endregion
+            return info;
+        }
+
+    }
+}
